@@ -1,0 +1,8 @@
+(library
+ (name bonsai_bench)
+ (public_name bonsai_bench)
+ (libraries textutils.ascii_table_kernel bonsai bonsai.driver
+   bonsai.perf_shared core core_bench.internals core_bench.js expectable
+   incr_dom.javascript_profiling js_of_ocaml incr_dom.ui_incr)
+ (preprocess
+  (pps ppx_jane js_of_ocaml-ppx ppx_pattern_bind)))

@@ -1,0 +1,47 @@
+open! Core
+open! Bonsai
+module Interaction = Bonsai_perf_shared.Interaction
+
+module Interactions : sig
+  type ('a, 'r) t =
+    { time_source : Time_source.t
+    ; name : string
+    ; component : graph -> 'r Bonsai.t
+    ; get_inject : 'r -> 'a -> unit Effect.t
+    ; interaction : 'a Interaction.t
+    }
+end
+
+module Startup : sig
+  type 'a t =
+    { time_source : Bonsai.Time_source.t
+    ; name : string
+    ; component : graph -> 'a Bonsai.t
+    }
+end
+
+type t =
+  | Interactions : (_, _) Interactions.t -> t
+  | Startup : _ Startup.t -> t
+
+val create
+  :  ?time_source:Bonsai.Time_source.t
+  -> name:string
+  -> component:(graph -> 'r Bonsai.t)
+  -> get_inject:('r -> 'a -> unit Effect.t)
+  -> 'a Interaction.t
+  -> t
+
+val create_with_resetter
+  :  ?time_source:Bonsai.Time_source.t
+  -> name:string
+  -> component:(graph -> 'r Bonsai.t)
+  -> get_inject:('r -> 'a -> unit Effect.t)
+  -> 'a Interaction.t
+  -> t
+
+val create_for_startup
+  :  ?time_source:Bonsai.Time_source.t
+  -> name:string
+  -> (graph -> 'r Bonsai.t)
+  -> t
