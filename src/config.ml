@@ -6,7 +6,7 @@ module Interactions = struct
   type ('a, 'r) t =
     { time_source : Bonsai.Time_source.t
     ; name : string
-    ; component : Bonsai.graph -> 'r Bonsai.t
+    ; component : local_ Bonsai.graph -> 'r Bonsai.t
     ; get_inject : 'r -> 'a -> unit Effect.t
     ; interaction : 'a Interaction.t
     }
@@ -16,7 +16,7 @@ module Startup = struct
   type 'a t =
     { time_source : Bonsai.Time_source.t
     ; name : string
-    ; component : Bonsai.graph -> 'a Bonsai.t
+    ; component : local_ Bonsai.graph -> 'a Bonsai.t
     }
 end
 

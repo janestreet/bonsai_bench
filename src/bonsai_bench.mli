@@ -18,7 +18,7 @@ type t
 val create
   :  ?time_source:Bonsai.Time_source.t
   -> name:string
-  -> component:(Bonsai.graph -> 'r Bonsai.t)
+  -> component:(local_ Bonsai.graph -> 'r Bonsai.t)
   -> get_inject:('r -> 'a -> unit Effect.t)
   -> 'a Interaction.t
   -> t
@@ -28,7 +28,7 @@ val create
 val create_with_resetter
   :  ?time_source:Bonsai.Time_source.t
   -> name:string
-  -> component:(Bonsai.graph -> 'r Bonsai.t)
+  -> component:(local_ Bonsai.graph -> 'r Bonsai.t)
   -> get_inject:('r -> 'a -> unit Effect.t)
   -> 'a Interaction.t
   -> t
@@ -38,7 +38,7 @@ val create_with_resetter
 val create_for_startup
   :  ?time_source:Bonsai.Time_source.t
   -> name:string
-  -> (Bonsai.graph -> 'a Bonsai.t)
+  -> (local_ Bonsai.graph -> 'a Bonsai.t)
   -> t
 
 (** [benchmark] works identically to [Core_bench_js.bench], but ensures that [Observer]s

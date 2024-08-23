@@ -6,7 +6,7 @@ module Interactions : sig
   type ('a, 'r) t =
     { time_source : Time_source.t
     ; name : string
-    ; component : graph -> 'r Bonsai.t
+    ; component : local_ graph -> 'r Bonsai.t
     ; get_inject : 'r -> 'a -> unit Effect.t
     ; interaction : 'a Interaction.t
     }
@@ -16,7 +16,7 @@ module Startup : sig
   type 'a t =
     { time_source : Bonsai.Time_source.t
     ; name : string
-    ; component : graph -> 'a Bonsai.t
+    ; component : local_ graph -> 'a Bonsai.t
     }
 end
 
@@ -27,7 +27,7 @@ type t =
 val create
   :  ?time_source:Bonsai.Time_source.t
   -> name:string
-  -> component:(graph -> 'r Bonsai.t)
+  -> component:(local_ graph -> 'r Bonsai.t)
   -> get_inject:('r -> 'a -> unit Effect.t)
   -> 'a Interaction.t
   -> t
@@ -35,7 +35,7 @@ val create
 val create_with_resetter
   :  ?time_source:Bonsai.Time_source.t
   -> name:string
-  -> component:(graph -> 'r Bonsai.t)
+  -> component:(local_ graph -> 'r Bonsai.t)
   -> get_inject:('r -> 'a -> unit Effect.t)
   -> 'a Interaction.t
   -> t
@@ -43,5 +43,5 @@ val create_with_resetter
 val create_for_startup
   :  ?time_source:Bonsai.Time_source.t
   -> name:string
-  -> (graph -> 'r Bonsai.t)
+  -> (local_ graph -> 'r Bonsai.t)
   -> t
