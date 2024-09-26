@@ -69,7 +69,7 @@ module Measurement = struct
     let before = before name in
     let after = after name in
     Javascript_profiling.Manual.mark after;
-    Javascript_profiling.Manual.measure ~name ~start:before ~end_:after
+    Javascript_profiling.Manual.measure ~name ~start:before ~end_:after |> Fn.ignore
   ;;
 end
 
@@ -191,7 +191,7 @@ let accumulate_measurements
              Bonsai.Private.Instrumentation.extract_node_path_from_entry_label label
            in
            let%bind.Option { node_type; here } = Map.find source_locations node_path in
-           let%map.Option here = here in
+           let%map.Option here in
            { measurement with
              kind = Named [%string "%{node_type} (%{here#Source_code_position})"]
            ; id = Some (Id.of_node_path node_path)

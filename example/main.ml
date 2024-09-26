@@ -19,8 +19,7 @@ let state =
       let state, set_state =
         Bonsai.state 0 ~sexp_of_model:[%sexp_of: Int.t] ~equal:[%equal: Int.t] graph
       in
-      let%arr state = state
-      and set_state = set_state in
+      let%arr state and set_state in
       state, set_state)
     ~get_inject:(fun (_, inject) -> inject)
     Interaction.(many_with_stabilizations [ inject 1; reset_model ])
@@ -47,8 +46,7 @@ module State_machine = struct
           | Incr -> model + 1
           | Decr -> model - 1)
     in
-    let%arr state = state
-    and inject = inject in
+    let%arr state and inject in
     state, inject
   ;;
 
@@ -115,9 +113,7 @@ let state_machine_with_manual_reset =
 
 module My_triple = struct
   let component first second third _graph =
-    let%arr first = first
-    and second = second
-    and third = third in
+    let%arr first and second and third in
     first, second, third
   ;;
 end
@@ -208,8 +204,8 @@ let two_state_machines_that_alternate =
     let which, set_which =
       Bonsai.state true ~sexp_of_model:[%sexp_of: Bool.t] ~equal:[%equal: Bool.t] graph
     in
-    let%arr which = which
-    and set_which = set_which
+    let%arr which
+    and set_which
     and state_1, inject_1 = State_machine.component graph
     and state_2, inject_2 = State_machine.component graph in
     let inject action =
@@ -268,7 +264,7 @@ let component_that_does_work_too_often =
   let component graph =
     let now = Bonsai.Clock.now graph in
     let r =
-      let%arr now = now in
+      let%arr now in
       { a = 1000000; b = now }
     in
     (* BUG: The below [let%arr] will get fired every time any field in the record changes,
@@ -288,13 +284,13 @@ let component_that_does_work_the_right_amount =
   let component graph =
     let now = Bonsai.Clock.now graph in
     let r =
-      let%arr now = now in
+      let%arr now in
       { a = 1000000; b = now }
     in
     (* This [let%sub] ensures that the below [let%arr] only depends on [a], and hence
        doesn't run when [Bonsai.Clock.now] updates. *)
     let%sub { a; _ } = r in
-    let%arr a = a in
+    let%arr a in
     do_some_work a
   in
   Interaction.advance_clock_by (Time_ns.Span.of_ms 1.)

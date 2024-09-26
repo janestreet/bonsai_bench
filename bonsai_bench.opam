@@ -12,6 +12,7 @@ build: [
 depends: [
   "ocaml" {>= "5.1.0"}
   "bonsai"
+  "bonsai_concrete"
   "core"
   "core_bench"
   "expectable"
