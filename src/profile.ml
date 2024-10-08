@@ -60,16 +60,16 @@ module Measurement = struct
   [@@deriving sexp]
 
   let create ~label ~duration = { kind = Kind.of_string label; duration; id = None }
-  let before label = label ^ "_before"
-  let after label = label ^ "_after"
-  let mark_before t = Javascript_profiling.Manual.mark (before (Kind.to_string t))
 
-  let mark_after_and_measure t =
-    let name = Kind.to_string t in
-    let before = before name in
-    let after = after name in
-    Javascript_profiling.Manual.mark after;
-    Javascript_profiling.Manual.measure ~name ~start:before ~end_:after |> Fn.ignore
+  let stop_and_measure kind timer =
+    Javascript_profiling.(Timer.stop timer |> measure (Kind.to_string kind))
+  ;;
+
+  let record kind ~f =
+    let timer = Javascript_profiling.Timer.start () in
+    let result = f () in
+    stop_and_measure kind timer;
+    result
   ;;
 end
 
@@ -240,8 +240,8 @@ let profile = function
     let component =
       Bonsai.Debug.instrument_computation
         component
-        ~start_timer:(fun s -> Measurement.mark_before (Named s))
-        ~stop_timer:(fun s -> Measurement.mark_after_and_measure (Named s))
+        ~start_timer:(fun s -> s, Javascript_profiling.Timer.start ())
+        ~stop_timer:(fun (s, timer) -> Measurement.stop_and_measure (Named s) timer)
     in
     let component =
       Graph_info.iter_graph_updates
@@ -266,29 +266,24 @@ let profile = function
           "PerformanceObserver could not be found. Please reach out to webdev-public on \
            symphony for assistance."
     in
+    let snapshot_timer = ref None in
     let handle_profile name =
-      Measurement.mark_after_and_measure Snapshot;
+      Option.iter !snapshot_timer ~f:(Measurement.stop_and_measure Snapshot);
       take_profile_snapshot ~name !graph_info performance_entries;
-      Measurement.mark_before Snapshot
+      snapshot_timer := Some (Javascript_profiling.Timer.start ())
     in
     let runner =
       Runner.initialize
         ~filter_profiles:false
         ~wrap_driver_creation:
-          { f =
-              (fun create_driver ->
-                Measurement.mark_before Startup;
-                let driver = create_driver () in
-                Measurement.mark_after_and_measure Startup;
-                driver)
-          }
+          { f = (fun create_driver -> Measurement.record Startup ~f:create_driver) }
         ~time_source
         ~component
         ~get_inject
         ~interaction
     in
     take_profile_snapshot ~name:"startup" !graph_info performance_entries;
-    Measurement.mark_before Snapshot;
+    snapshot_timer := Some (Javascript_profiling.Timer.start ());
     Runner.run_interactions runner ~handle_profile;
     performance_observer##disconnect;
     Runner.invalidate_observers runner
