@@ -104,7 +104,8 @@ let benchmark_compare
         | Ok r -> Some r)
       |> Core_bench_internals.Simplified_benchmark.extract
       |> List.mapi ~f:(fun i { full_benchmark_name; time_per_run_nanos; _ } ->
-        (full_benchmark_name, i), Float.to_string_hum ~decimals:2 time_per_run_nanos)
+        ( (full_benchmark_name, i)
+        , Time_ns.Span.of_ns time_per_run_nanos |> Time_ns.Span.to_string_hum ))
       |> Scenario_map.of_alist_exn
     in
     config, results)
@@ -112,9 +113,7 @@ let benchmark_compare
   |> Map.transpose_keys (module Scenario_map.Key)
   |> Map.map ~f:(fun conf_map ->
     Map.to_alist conf_map
-    |> List.map
-         ~f:
-           (Tuple2.map_fst ~f:(fun c -> (Config.name c |> String.uncapitalize) ^ " (ns)")))
+    |> List.map ~f:(Tuple2.map_fst ~f:(fun c -> Config.name c |> String.uncapitalize)))
   |> Map.to_alist
   |> List.map ~f:(fun ((scenario, _), result) -> scenario, result)
   |> Expectable.print_alist
