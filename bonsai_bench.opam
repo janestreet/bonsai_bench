@@ -17,13 +17,13 @@ depends: [
   "core_bench"
   "expectable"
   "incr_dom"
+  "ocaml-embed-file"
   "ppx_jane"
   "ppx_pattern_bind"
   "textutils"
   "dune"             {>= "3.11.0"}
   "js_of_ocaml"      {>= "5.1.1" & < "5.7.0"}
   "js_of_ocaml-ppx"  {>= "5.1.1" & < "5.7.0"}
-  "ocaml-embed-file"
 ]
 available: arch != "arm32" & arch != "x86_32"
 synopsis: "A library for benchmarking bonsai web applications"
