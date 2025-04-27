@@ -47,7 +47,7 @@ let create_with_resetter
     ; component
     ; get_inject
     ; interaction =
-        [ interaction; Interaction.reset_model; Interaction.stabilize ]
+        [ interaction; Interaction.reset_model; Interaction.recompute ]
         |> Interaction.many
     }
 ;;

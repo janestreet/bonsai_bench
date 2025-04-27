@@ -1,0 +1,6 @@
+(library
+ (name bonsai_bench_protocol)
+ (public_name bonsai_bench.protocol)
+ (libraries core uri)
+ (preprocess
+  (pps ppx_jane)))

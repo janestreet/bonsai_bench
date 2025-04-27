@@ -16,10 +16,11 @@ type wrap_create = { f : 'a. (unit -> 'a) -> 'a } [@@unboxed]
 (* We perform two optimizations in this step: flattening the interactions and deduping
    stabilizations. Flattening the structure ensures that there's no additional
    overhead to nesting lots of [Many]s when creating benchmarks. Consecutive
-   [Stabilize]s don't add anything to benchmarks and would add a function call of
+   [Recompute]s don't add anything to benchmarks and would add a function call of
    overhead. *)
 let initialize
   ~filter_profiles
+  ~driver_instrumentation
   ~wrap_driver_creation
   ~time_source
   ~component
@@ -27,7 +28,8 @@ let initialize
   ~interaction
   =
   let driver =
-    wrap_driver_creation.f (fun () -> Bonsai_driver.create ~time_source component)
+    wrap_driver_creation.f (fun () ->
+      Bonsai_driver.create ~instrumentation:driver_instrumentation ~time_source component)
   in
   let inject_action action =
     (* Calling Driver.result every time that inject_action is called
@@ -37,9 +39,9 @@ let initialize
   in
   let interactions =
     Interaction.many
-      [ Interaction.stabilize
+      [ Interaction.recompute
       ; interaction
-      ; Interaction.stabilize
+      ; Interaction.recompute
       ; Interaction.profile ~name:"end of run"
       ]
     |> Interaction.finalize ~filter_profiles

@@ -14,7 +14,7 @@ let state =
     ~name:"Bonsai.state"
     ~component:(Bonsai.state [%here] (module Int) ~default_model:0)
     ~get_inject:(fun (_, inject) -> inject)
-    Bonsai_bench.Interaction.(many_with_stabilizations [ inject 1; reset_model ])
+    Bonsai_bench.Interaction.(many_with_recomputes [ inject 1; reset_model ])
 ```
 
 There are more examples in the `example/` directory.
