@@ -1,5 +1,4 @@
 open! Core
-open Js_of_ocaml
 module Graph_info = Bonsai.Private.Graph_info
 
 module Id = struct
@@ -38,14 +37,6 @@ module Measurement = struct
       | Snapshot -> time_since_snapshot_began
     ;;
 
-    let of_string s =
-      if String.equal time_to_first_stabilization s
-      then Startup
-      else if String.equal time_since_snapshot_began s
-      then Snapshot
-      else Named s
-    ;;
-
     let is_bonsai_measurement = function
       | Named _ -> true
       | _ -> false
@@ -54,29 +45,23 @@ module Measurement = struct
 
   type t =
     { kind : Kind.t
-    ; duration : float
+    ; duration : Time_ns.Span.t
     ; id : int option
     }
   [@@deriving sexp]
 
-  let create ~label ~duration = { kind = Kind.of_string label; duration; id = None }
-
-  let stop_and_measure kind timer =
-    Javascript_profiling.(Timer.stop timer |> measure (Kind.to_string kind))
-  ;;
-
-  let record kind ~f =
-    let timer = Javascript_profiling.Timer.start () in
-    let result = f () in
-    stop_and_measure kind timer;
-    result
+  let create kind timer =
+    match Javascript_profiling.Timer.(stop timer |> duration) with
+    | Ok duration -> { kind; duration; id = None }
+    | Backgrounding_changed_unreliable _duration ->
+      failwith "BUG: Backgrounding should not have changed while benchmarking."
   ;;
 end
 
 module Accumulated_measurement = struct
   type t =
     { kind : Measurement.Kind.t
-    ; total_duration : float
+    ; total_duration : Time_ns.Span.t
     ; count : int
     ; id : int option
     }
@@ -87,7 +72,7 @@ module Accumulated_measurement = struct
     { kind = kind'; total_duration = total_duration'; _ }
     =
     match kind, kind' with
-    | Named _, Named _ -> Float.descending total_duration total_duration'
+    | Named _, Named _ -> Time_ns.Span.descending total_duration total_duration'
     | _, _ -> Measurement.Kind.compare kind kind'
   ;;
 
@@ -99,25 +84,28 @@ module Accumulated_measurement = struct
     assert (Measurement.Kind.equal kind measurement.Measurement.kind);
     { kind
     ; count = count + 1
-    ; total_duration = total_duration +. measurement.duration
+    ; total_duration = Time_ns.Span.(total_duration + measurement.duration)
     ; id
     }
   ;;
 end
 
+let spans_pct a b =
+  Percent.Always_percentage.to_string
+    (Percent.of_percentage (Time_ns.Span.(to_ns a /. to_ns b) *. 100.))
+;;
+
 let create_summary_table ~total_time ~incremental_time =
+  let incremental_overhead = Time_ns.Span.(total_time - incremental_time) in
   let open Ascii_table_kernel in
   to_string_noattr
     [ Column.create "Statistic" fst; Column.create "Value" snd ]
     ~limit_width_to:Int.max_value
     ~bars:`Unicode
-    [ "Total time (ms)", Float.to_string total_time
-    ; "Incremental time (ms)", Float.to_string incremental_time
-    ; "Incremental Overhead (ms)", Float.to_string (total_time -. incremental_time)
-    ; ( "Incremental Overhead (%)"
-      , Percent.Always_percentage.to_string
-          (Percent.of_percentage ((total_time -. incremental_time) /. total_time *. 100.))
-      )
+    [ "Total time", Time_ns.Span.to_string_hum total_time
+    ; "Incremental time", Time_ns.Span.to_string_hum incremental_time
+    ; "Incremental Overhead", Time_ns.Span.to_string_hum incremental_overhead
+    ; "Incremental Overhead (%)", spans_pct incremental_overhead total_time
     ]
 ;;
 
@@ -132,15 +120,12 @@ let create_snapshot_table data ~incremental_time =
         Measurement.Kind.to_string kind)
     ; Column.create "Times fired" (fun { Accumulated_measurement.count; _ } ->
         Int.to_string count)
-    ; Column.create
-        "Total time (ms)"
-        (fun { Accumulated_measurement.total_duration; _ } ->
-           Float.to_string total_duration)
+    ; Column.create "Total time" (fun { Accumulated_measurement.total_duration; _ } ->
+        Time_ns.Span.to_string_hum total_duration)
     ; Column.create
         "Percent of incremental time"
         (fun { Accumulated_measurement.total_duration; _ } ->
-           Percent.Always_percentage.to_string
-             (Percent.of_percentage (total_duration /. incremental_time *. 100.)))
+           spans_pct total_duration incremental_time)
     ]
   in
   to_string_noattr columns data ~limit_width_to:Int.max_value ~bars:`Unicode
@@ -165,10 +150,12 @@ let print_statistics data =
   in
   let incremental_time =
     List.sum
-      (module Float)
+      (module Time_ns.Span)
       incremental_measurements
       ~f:(fun { kind; total_duration; _ } ->
-        if Measurement.Kind.is_bonsai_measurement kind then total_duration else 0.)
+        if Measurement.Kind.is_bonsai_measurement kind
+        then total_duration
+        else Time_ns.Span.zero)
   in
   print_endline "Summary:";
   print_endline (create_summary_table ~total_time ~incremental_time);
@@ -237,46 +224,41 @@ let profile = function
   | Interactions { time_source; component; get_inject; interaction; name } ->
     print_endline [%string "Running Bonsai_bench profile of %{name}"];
     let graph_info = ref Graph_info.empty in
-    let component =
-      Bonsai.Debug.instrument_computation
-        component
-        ~start_timer:(fun s -> s, Javascript_profiling.Timer.start ())
-        ~stop_timer:(fun (s, timer) -> Measurement.stop_and_measure (Named s) timer)
-    in
-    let component =
-      Graph_info.iter_graph_updates
-        (Bonsai.Private.top_level_handle component)
-        ~on_update:(fun gi -> graph_info := gi)
-    in
-    let component graph = Bonsai.Private.perform graph component in
     let performance_entries = ref [] in
-    let performance_observer =
-      if PerformanceObserver.is_supported ()
-      then
-        PerformanceObserver.observe ~entry_types:[ "measure" ] ~f:(fun entries _ ->
-          Array.iter
-            (Js.to_array entries##getEntries)
-            ~f:(fun entry ->
-              let label = Js.to_string entry##.name in
-              let duration = Js.to_float entry##.duration in
-              performance_entries
-              := Measurement.create ~label ~duration :: !performance_entries))
-      else
-        failwith
-          "PerformanceObserver could not be found. Please reach out to webdev-public on \
-           symphony for assistance."
-    in
+    let store_entry entry = performance_entries := entry :: !performance_entries in
     let snapshot_timer = ref None in
     let handle_profile name =
-      Option.iter !snapshot_timer ~f:(Measurement.stop_and_measure Snapshot);
+      Option.iter !snapshot_timer ~f:(fun timer ->
+        Measurement.create Snapshot timer |> store_entry);
       take_profile_snapshot ~name !graph_info performance_entries;
       snapshot_timer := Some (Javascript_profiling.Timer.start ())
     in
     let runner =
       Runner.initialize
         ~filter_profiles:false
+        ~driver_instrumentation:
+          { instrument_for_computation_watcher =
+              Ui_incr.return Bonsai.Private.Instrumentation.Watching.Not_watching
+          ; instrument_for_profiling =
+              Ui_incr.return Bonsai.Private.Instrumentation.Profiling.Profiling
+          ; computation_watcher_queue =
+              Queue.create ( (* We don't use the computation watcher. *) )
+          ; set_latest_graph_info = (fun gi -> graph_info := gi)
+          ; start_timer = (fun evt -> evt, Javascript_profiling.Timer.start ())
+          ; stop_timer =
+              (fun (evt, timer) ->
+                match evt with
+                | Profiling_entry s -> Measurement.create (Named s) timer |> store_entry
+                | _ -> (* We only care about profiling measurements. *) ())
+          }
         ~wrap_driver_creation:
-          { f = (fun create_driver -> Measurement.record Startup ~f:create_driver) }
+          { f =
+              (fun create_driver ->
+                let timer = Javascript_profiling.Timer.start () in
+                let driver = create_driver () in
+                Measurement.create Startup timer |> store_entry;
+                driver)
+          }
         ~time_source
         ~component
         ~get_inject
@@ -285,6 +267,5 @@ let profile = function
     take_profile_snapshot ~name:"startup" !graph_info performance_entries;
     snapshot_timer := Some (Javascript_profiling.Timer.start ());
     Runner.run_interactions runner ~handle_profile;
-    performance_observer##disconnect;
     Runner.invalidate_observers runner
 ;;

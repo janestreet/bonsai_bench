@@ -22,7 +22,7 @@ let state =
       let%arr state and set_state in
       state, set_state)
     ~get_inject:(fun (_, inject) -> inject)
-    Interaction.(many_with_stabilizations [ inject 1; reset_model ])
+    Interaction.(many_with_recomputes [ inject 1; reset_model ])
 ;;
 
 module State_machine = struct
@@ -35,7 +35,7 @@ module State_machine = struct
 
   let component graph =
     let state, inject =
-      Bonsai.state_machine0
+      Bonsai.state_machine
         graph
         ~sexp_of_model:[%sexp_of: Int.t]
         ~equal:[%equal: Int.t]
@@ -58,7 +58,7 @@ end
    an interaction which is idempotent so each test run will be identical. *)
 let state_machine_idempotent =
   [ State_machine.incr; State_machine.decr; State_machine.incr; State_machine.decr ]
-  |> Interaction.many_with_stabilizations
+  |> Interaction.many_with_recomputes
   |> Bonsai_bench.create
        ~name:"Bonsai.state_machine0: idempotent"
        ~component:State_machine.component
@@ -72,7 +72,7 @@ let state_machine_idempotent =
    skewed benchmark results. *)
 let state_machine_without_reset =
   [ State_machine.incr; State_machine.decr; State_machine.incr; State_machine.incr ]
-  |> Interaction.many_with_stabilizations
+  |> Interaction.many_with_recomputes
   |> Bonsai_bench.create
        ~name:"Bonsai.state_machine0: not idempotent; no model reset"
        ~component:State_machine.component
@@ -86,7 +86,7 @@ let state_machine_without_reset =
    and [state_machine_with_reset] are identical. *)
 let state_machine_with_reset =
   [ State_machine.incr; State_machine.decr; State_machine.incr; State_machine.incr ]
-  |> Interaction.many_with_stabilizations
+  |> Interaction.many_with_recomputes
   |> Bonsai_bench.create_with_resetter
        ~name:
          "Bonsai.state_machine0: not idempotent; model reset using create_with_resetter"
@@ -102,9 +102,9 @@ let state_machine_with_manual_reset =
   ; State_machine.incr
   ; State_machine.incr
   ; Interaction.reset_model
-  ; Interaction.stabilize
+  ; Interaction.recompute
   ]
-  |> Interaction.many_with_stabilizations
+  |> Interaction.many_with_recomputes
   |> Bonsai_bench.create
        ~name:"Bonsai.state_machine0: not idempotent; model reset manually"
        ~component:State_machine.component
@@ -132,7 +132,7 @@ let piecewise_triple_stabilize_between_each =
     ; change_input second ""
     ; change_input third 0.
     ]
-  |> Interaction.many_with_stabilizations
+  |> Interaction.many_with_recomputes
   |> Bonsai_bench.create
        ~name:"My_triple setting components and stabilizing between each one"
        ~component:
@@ -144,7 +144,7 @@ let piecewise_triple_stabilize_between_each =
 ;;
 
 (* If we wanted to ensure stabilization only happened after all of the inputs were set,
-   we could do the following. Since [many_with_stabilizations] just intersperses
+   we could do the following. Since [many_with_recomputes] just intersperses
    [stabilize]s in the list of interactions, stabilization is only inserted between the
    two [many] groups below. *)
 let piecewise_triple_stabilize_after_all =
@@ -155,7 +155,7 @@ let piecewise_triple_stabilize_after_all =
     [ many [ change_input first 1; change_input second "second"; change_input third 3. ]
     ; many [ change_input first 0; change_input second ""; change_input third 0. ]
     ]
-  |> Interaction.many_with_stabilizations
+  |> Interaction.many_with_recomputes
   |> Bonsai_bench.create
        ~name:"My_triple setting components and stabilizing after all three"
        ~component:
@@ -216,7 +216,7 @@ let two_state_machines_that_alternate =
     (state_1, state_2), inject
   in
   [ State_machine.incr; State_machine.incr; State_machine.decr; State_machine.decr ]
-  |> Interaction.many_with_stabilizations
+  |> Interaction.many_with_recomputes
   |> Bonsai_bench.create
        ~name:"Alternating state machines"
        ~component
@@ -267,11 +267,10 @@ let component_that_does_work_too_often =
       let%arr now in
       { a = 1000000; b = now }
     in
-    (* BUG: The below [let%arr] will get fired every time any field in the record changes,
+    (* BUG: The below [Bonsai.map] will get fired every time any field in the record changes,
        i.e, whenever [Bonsai.Clock.now] updates. The body of this is expensive and depends
        only on [a]. *)
-    let%arr { a; _ } = r in
-    do_some_work a
+    Bonsai.map r ~f:(fun { a; _ } -> do_some_work a)
   in
   Interaction.advance_clock_by (Time_ns.Span.of_ms 1.)
   |> Bonsai_bench.create
@@ -318,15 +317,14 @@ let () = print_endline "======== Comparison Benchmarking (List/Assoc) ========"
 let () =
   let quota = Core_bench_js.Quota.Span (Time_float.Span.of_sec 1.0) in
   Bonsai_bench.benchmark_compare_startup
-    (module Perf_configs.Dynamic_num)
     ~run_config:(Core_bench_js.Run_config.create () ~quota)
-    ~inputs:Perf_configs.Dynamic_num.startup_inputs
-    ~configs:Perf_configs.Dynamic_num.all;
+    ~computations:(force Perf_configs.Dynamic_num.all_computations)
+    (force Perf_configs.Dynamic_num.startup_inputs);
   Bonsai_bench.benchmark_compare_interactions
-    (module Perf_configs.Dynamic_num)
     ~run_config:(Core_bench_js.Run_config.create () ~quota)
-    ~scenarios:Perf_configs.Dynamic_num.scenarios
-    ~configs:Perf_configs.Dynamic_num.all
+    ~get_inject:(fun _ _ -> Effect.Ignore)
+    ~computations:(force Perf_configs.Dynamic_num.all_computations)
+    (force Perf_configs.Dynamic_num.scenarios)
 ;;
 
 let () = print_endline "======== Comparison Benchmarking ========"
@@ -335,13 +333,12 @@ let () =
   let quota = Core_bench_js.Quota.Span (Time_float.Span.of_sec 1.0) in
   print_endline "Startup";
   Bonsai_bench.benchmark_compare_startup
-    (module Perf_configs.Switch)
     ~run_config:(Core_bench_js.Run_config.create () ~quota)
-    ~inputs:Perf_configs.Switch.startup_inputs
-    ~configs:Perf_configs.Switch.all;
+    ~computations:(force Perf_configs.Switch.all_computations)
+    Perf_configs.Switch.startup_inputs;
   Bonsai_bench.benchmark_compare_interactions
-    (module Perf_configs.Switch)
     ~run_config:(Core_bench_js.Run_config.create () ~quota)
-    ~scenarios:Perf_configs.Switch.scenarios
-    ~configs:Perf_configs.Switch.all
+    ~get_inject:(fun _ _ -> Effect.Ignore)
+    ~computations:(force Perf_configs.Switch.all_computations)
+    Perf_configs.Switch.scenarios
 ;;
