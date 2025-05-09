@@ -1,7 +1,7 @@
 open! Core
 include Config
-module Input = Bonsai_perf_shared.Input
-module Scenario = Bonsai_perf_shared.Scenario
+module Input = Bonsai_bench_scenario.Input
+module Scenario = Bonsai_bench_scenario.Scenario
 
 module Machine_output = struct
   let mode =
@@ -119,7 +119,7 @@ let to_core_bench_test = function
             ~driver_instrumentation:
               (Bonsai_driver.Instrumentation.default_for_test_handles ())
             ~wrap_driver_creation:{ f = (fun create_driver -> create_driver ()) }
-            ~get_inject:(fun _ _ -> Bonsai.Effect.Ignore)
+            ~get_inject:Config.startup_get_inject
             ~interaction:Interaction.recompute
             ~filter_profiles:true
         in

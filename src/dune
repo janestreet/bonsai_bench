@@ -2,7 +2,7 @@
  (name bonsai_bench)
  (public_name bonsai_bench)
  (libraries textutils.ascii_table_kernel bonsai bonsai_bench_protocol
-   bonsai.driver bonsai.perf_shared bonsai.proc core core_bench.internals
+   bonsai.bench_scenario bonsai.driver bonsai.proc core core_bench.internals
    core_bench.js expectable incr_dom.javascript_profiling js_of_ocaml
    bonsai_concrete.ui_incr)
  (preprocess

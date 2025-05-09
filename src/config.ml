@@ -1,6 +1,6 @@
 open! Core
 open! Bonsai
-module Interaction = Bonsai_perf_shared.Interaction
+module Interaction = Bonsai_bench_scenario.Interaction
 
 module Interactions = struct
   type ('a, 'r) t =
@@ -13,10 +13,10 @@ module Interactions = struct
 end
 
 module Startup = struct
-  type 'a t =
+  type 'r t =
     { time_source : Bonsai.Time_source.t
     ; name : string
-    ; component : local_ Bonsai.graph -> 'a Bonsai.t
+    ; component : local_ Bonsai.graph -> 'r Bonsai.t
     }
 end
 
@@ -58,4 +58,9 @@ let create_for_startup
   component
   =
   Startup { time_source; name; component }
+;;
+
+let startup_get_inject _ _ =
+  Bonsai.Effect.of_thunk (fun () ->
+    raise_s [%message "Benchmarking startup does not support [inject] interactions."])
 ;;

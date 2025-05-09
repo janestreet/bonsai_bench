@@ -1,6 +1,6 @@
 open! Core
 open! Bonsai
-module Interaction = Bonsai_perf_shared.Interaction
+module Interaction = Bonsai_bench_scenario.Interaction
 
 module Interactions : sig
   type ('a, 'r) t =
@@ -45,3 +45,5 @@ val create_for_startup
   -> name:string
   -> (local_ graph -> 'r Bonsai.t)
   -> t
+
+val startup_get_inject : _ -> _ -> unit Effect.t

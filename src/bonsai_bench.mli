@@ -1,9 +1,9 @@
 open! Core
 open Bonsai.For_open
-open Bonsai_perf_shared
-module Interaction = Bonsai_perf_shared.Interaction
-module Input = Bonsai_perf_shared.Input
-module Scenario = Bonsai_perf_shared.Scenario
+open Bonsai_bench_scenario
+module Interaction = Bonsai_bench_scenario.Interaction
+module Input = Bonsai_bench_scenario.Input
+module Scenario = Bonsai_bench_scenario.Scenario
 
 (** [t] is roughly equivalent to [Core_bench_js.Test.t], but can also be used to obtain
     [profile]s of the benchmarks. See [profile] below for more details. *)
@@ -60,6 +60,12 @@ val measure
 (** [profile] runs a given [t] as an instrumented computation, and provides snapshots of
     how much time is spent within different parts of bonsai code. It also provides
     statistics on incremental overhead.
+
+    Each snapshot only includes timing **since the last snapshot**; i.e. snapshots are not
+    cumulative.
+
+    By default, [profile] will take a snapshot after startup, and another after running
+    all interactions. You can add additional snapshots via [Interaction.profile].
 
     Note: because [profile] runs on an instrumented computation, the total running time of
     the test may be higher. Furthermore, because [profile] only runs the computation once,
