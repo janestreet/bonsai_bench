@@ -1,6 +1,6 @@
 open! Core
 open Bonsai
-module Interaction = Bonsai_perf_shared.Interaction
+module Interaction = Bonsai_bench_scenario.Interaction
 
 type t =
   | T :
@@ -27,6 +27,11 @@ let initialize
   ~get_inject
   ~interaction
   =
+  let interactions =
+    Interaction.many [ Interaction.recompute; interaction; Interaction.recompute ]
+    |> Interaction.finalize ~filter_profiles
+    |> Array.of_list
+  in
   let driver =
     wrap_driver_creation.f (fun () ->
       Bonsai_driver.create ~instrumentation:driver_instrumentation ~time_source component)
@@ -36,16 +41,6 @@ let initialize
        is important because the value can change during stabilization *)
     let result = Bonsai_driver.result driver in
     (get_inject result) action
-  in
-  let interactions =
-    Interaction.many
-      [ Interaction.recompute
-      ; interaction
-      ; Interaction.recompute
-      ; Interaction.profile ~name:"end of run"
-      ]
-    |> Interaction.finalize ~filter_profiles
-    |> Array.of_list
   in
   T { driver; time_source; inject_action; interactions }
 ;;

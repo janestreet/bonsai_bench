@@ -1,5 +1,5 @@
 open Bonsai_proc.For_open
-module Interaction = Bonsai_perf_shared.Interaction
+module Interaction = Bonsai_bench_scenario.Interaction
 
 type t
 type wrap_create = { f : 'a. (unit -> 'a) -> 'a } [@@unboxed]

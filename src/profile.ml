@@ -1,5 +1,6 @@
 open! Core
 module Graph_info = Bonsai.Private.Graph_info
+module Interaction = Bonsai_bench_scenario.Interaction
 
 module Id = struct
   let instance = String.Table.create ()
@@ -15,31 +16,58 @@ module Id = struct
   ;;
 end
 
+let stop_timer timer =
+  match Javascript_profiling.Timer.(stop timer |> duration) with
+  | Ok duration -> duration
+  | Backgrounding_changed_unreliable _duration ->
+    failwith "BUG: Backgrounding should not have changed while benchmarking."
+;;
+
 module Measurement = struct
   module Kind = struct
     module T = struct
       type t =
-        | Startup
-        | Snapshot
-        | Named of string
+        | Graph_application
+        | Preprocess
+        | Gather
+        | Run_eval_fun
+        | First_stabilization
+        | Incremental_recompute of string
+        | Stabilize_for_clock
+        | Apply_actions
+        | Stabilize_for_action
+        | Stabilize_after_all_apply_actions
       [@@deriving sexp, equal, compare]
+
+      let is_incremental_recompute = function
+        | Incremental_recompute _ -> true
+        | _ -> false
+      ;;
+
+      let is_stabilize = function
+        | First_stabilization
+        | Stabilize_for_clock
+        | Stabilize_for_action
+        | Stabilize_after_all_apply_actions -> true
+        | _ -> false
+      ;;
     end
 
     include T
     include Comparable.Make_plain (T)
 
-    let time_to_first_stabilization = "Bonsai_bench profile: first stabilization"
-    let time_since_snapshot_began = "Bonsai_bench profile: current snapshot"
-
+    (* We don't record while printing results, so allocating strings in here should be fine.*)
     let to_string = function
-      | Named s -> s
-      | Startup -> time_to_first_stabilization
-      | Snapshot -> time_since_snapshot_began
-    ;;
-
-    let is_bonsai_measurement = function
-      | Named _ -> true
-      | _ -> false
+      | Incremental_recompute label -> label
+      | Graph_application -> "[startup] Graph Application"
+      | Preprocess -> "[startup] Preprocess"
+      | Gather -> "[startup] Gather"
+      | Run_eval_fun -> "[startup] Run Eval Fun"
+      | First_stabilization -> "[startup] First Stabilization"
+      | Stabilize_for_clock -> "[runtime] Stabilize For Clock"
+      | Apply_actions -> "[runtime] Apply Actions"
+      | Stabilize_for_action -> "[runtime] Stabilize For Action"
+      | Stabilize_after_all_apply_actions -> "[runtime] Stabilize After All Apply Actions"
     ;;
   end
 
@@ -50,11 +78,36 @@ module Measurement = struct
     }
   [@@deriving sexp]
 
-  let create kind timer =
-    match Javascript_profiling.Timer.(stop timer |> duration) with
-    | Ok duration -> { kind; duration; id = None }
-    | Backgrounding_changed_unreliable _duration ->
-      failwith "BUG: Backgrounding should not have changed while benchmarking."
+  let create kind ~duration = { kind; duration; id = None }
+
+  let annotate
+    ~(source_locations : Graph_info.Node_info.t Bonsai.Private.Node_path.Map.t)
+    measurement
+    =
+    match measurement.kind with
+    | Incremental_recompute label ->
+      let with_source_position =
+        let%bind.Option node_path =
+          Bonsai.Private.Instrumentation.extract_node_path_from_entry_label label
+        in
+        let%bind.Option { node_type; here } = Map.find source_locations node_path in
+        let%map.Option here in
+        { measurement with
+          kind =
+            Incremental_recompute [%string "%{node_type} (%{here#Source_code_position})"]
+        ; id = Some (Id.of_node_path node_path)
+        }
+      in
+      Option.value with_source_position ~default:measurement
+    | Graph_application
+    | Preprocess
+    | Gather
+    | Run_eval_fun
+    | First_stabilization
+    | Stabilize_for_clock
+    | Apply_actions
+    | Stabilize_for_action
+    | Stabilize_after_all_apply_actions -> measurement
   ;;
 end
 
@@ -72,7 +125,8 @@ module Accumulated_measurement = struct
     { kind = kind'; total_duration = total_duration'; _ }
     =
     match kind, kind' with
-    | Named _, Named _ -> Time_ns.Span.descending total_duration total_duration'
+    | Incremental_recompute _, Incremental_recompute _ ->
+      Time_ns.Span.descending total_duration total_duration'
     | _, _ -> Measurement.Kind.compare kind kind'
   ;;
 
@@ -95,21 +149,23 @@ let spans_pct a b =
     (Percent.of_percentage (Time_ns.Span.(to_ns a /. to_ns b) *. 100.))
 ;;
 
-let create_summary_table ~total_time ~incremental_time =
-  let incremental_overhead = Time_ns.Span.(total_time - incremental_time) in
+let create_summary_table ~total_time ~let_arr_time ~stabilize_time =
+  let other_time = Time_ns.Span.(total_time - let_arr_time) in
   let open Ascii_table_kernel in
   to_string_noattr
     [ Column.create "Statistic" fst; Column.create "Value" snd ]
     ~limit_width_to:Int.max_value
     ~bars:`Unicode
     [ "Total time", Time_ns.Span.to_string_hum total_time
-    ; "Incremental time", Time_ns.Span.to_string_hum incremental_time
-    ; "Incremental Overhead", Time_ns.Span.to_string_hum incremental_overhead
-    ; "Incremental Overhead (%)", spans_pct incremental_overhead total_time
+    ; "Stabilize time", Time_ns.Span.to_string_hum stabilize_time
+    ; "let%arr time", Time_ns.Span.to_string_hum let_arr_time
+    ; "let%arr / stabilize (%)", spans_pct let_arr_time stabilize_time
+    ; "Non let%arr time", Time_ns.Span.to_string_hum other_time
+    ; "Non let%arr time (%)", spans_pct other_time total_time
     ]
 ;;
 
-let create_snapshot_table data ~incremental_time =
+let create_snapshot_table data ~total_time ~let_arr_time =
   let open Ascii_table_kernel in
   let columns =
     [ Column.create "Id" (fun { Accumulated_measurement.id; _ } ->
@@ -123,66 +179,45 @@ let create_snapshot_table data ~incremental_time =
     ; Column.create "Total time" (fun { Accumulated_measurement.total_duration; _ } ->
         Time_ns.Span.to_string_hum total_duration)
     ; Column.create
-        "Percent of incremental time"
+        "% of let%arr time"
+        (fun { Accumulated_measurement.total_duration; kind; _ } ->
+           match Measurement.Kind.is_incremental_recompute kind with
+           | true -> spans_pct total_duration let_arr_time
+           | false -> "")
+    ; Column.create
+        "% of total time"
         (fun { Accumulated_measurement.total_duration; _ } ->
-           spans_pct total_duration incremental_time)
+           spans_pct total_duration total_time)
     ]
   in
   to_string_noattr columns data ~limit_width_to:Int.max_value ~bars:`Unicode
 ;;
 
-let print_statistics data =
-  let sorted_data = List.sort (Map.data data) ~compare:Accumulated_measurement.compare in
-  let incremental_measurements, bonsai_bench_internals =
-    List.partition_tf sorted_data ~f:(fun { kind; _ } ->
-      Measurement.Kind.is_bonsai_measurement kind)
+let print_statistics ~duration data =
+  let sorted_measurements =
+    List.sort (Map.data data) ~compare:Accumulated_measurement.compare
   in
-  let total_time =
-    match bonsai_bench_internals with
-    | [ { Accumulated_measurement.total_duration; _ } ] -> total_duration
-    | _ ->
-      raise_s
-        [%message
-          "An error occurred while profiling your computation. Bonsai bench expected \
-           only one internal measurement. Please report this error to the bonsai team."
-            ~internal_measurements:
-              (bonsai_bench_internals : Accumulated_measurement.t list)]
-  in
-  let incremental_time =
-    List.sum
-      (module Time_ns.Span)
-      incremental_measurements
-      ~f:(fun { kind; total_duration; _ } ->
-        if Measurement.Kind.is_bonsai_measurement kind
-        then total_duration
-        else Time_ns.Span.zero)
+  let let_arr_time, stabilize_time =
+    List.fold
+      ~init:(Time_ns.Span.zero, Time_ns.Span.zero)
+      sorted_measurements
+      ~f:(fun (let_arr_acc, stabilize_acc) { kind; total_duration; _ } ->
+        let add_if ~f base =
+          if f kind then Time_ns.Span.(base + total_duration) else base
+        in
+        ( add_if ~f:Measurement.Kind.is_incremental_recompute let_arr_acc
+        , add_if ~f:Measurement.Kind.is_stabilize stabilize_acc ))
   in
   print_endline "Summary:";
-  print_endline (create_summary_table ~total_time ~incremental_time);
+  print_endline (create_summary_table ~total_time:duration ~let_arr_time ~stabilize_time);
   print_endline "Details:";
-  print_endline (create_snapshot_table incremental_measurements ~incremental_time)
+  print_endline
+    (create_snapshot_table sorted_measurements ~total_time:duration ~let_arr_time)
 ;;
 
-let accumulate_measurements
-  ~(source_locations : Graph_info.Node_info.t Bonsai.Private.Node_path.Map.t)
-  measurements
-  =
+let accumulate_measurements ~source_locations measurements =
   let with_ids, without_ids =
-    List.map measurements ~f:(fun measurement ->
-      match measurement.Measurement.kind with
-      | Snapshot | Startup -> measurement
-      | Named label ->
-        Option.value
-          ~default:measurement
-          (let%bind.Option node_path =
-             Bonsai.Private.Instrumentation.extract_node_path_from_entry_label label
-           in
-           let%bind.Option { node_type; here } = Map.find source_locations node_path in
-           let%map.Option here in
-           { measurement with
-             kind = Named [%string "%{node_type} (%{here#Source_code_position})"]
-           ; id = Some (Id.of_node_path node_path)
-           }))
+    List.map measurements ~f:(Measurement.annotate ~source_locations)
     |> List.fold
          ~init:(Int.Map.empty, Measurement.Kind.Map.empty)
          ~f:(fun (with_ids, without_ids) measurement ->
@@ -195,6 +230,7 @@ let accumulate_measurements
              with_ids, Map.update without_ids measurement.kind ~f:accumulate_measurements
            | Some id -> Map.update with_ids id ~f:accumulate_measurements, without_ids)
   in
+  (* Assign measurements without IDs (e.g. startup) a new ID.*)
   Map.fold without_ids ~init:with_ids ~f:(fun ~key:_ ~data:measurement acc ->
     let id =
       match Map.max_elt acc with
@@ -207,65 +243,114 @@ let accumulate_measurements
     Map.set acc ~key:id ~data:measurement)
 ;;
 
-let take_profile_snapshot ~name graph_info performance_entries =
-  match List.length !performance_entries with
-  | 0 | 1 -> ()
+let take_profile_snapshot ~duration ~name graph_info recorded_measurements =
+  match !recorded_measurements with
+  | [] ->
+    print_endline [%string "Not printing profile of %{name} because nothing happened"]
   | _ ->
     print_endline [%string "Bonsai_bench Profile: %{name}"];
     let source_locations =
       Graph_info.pull_source_locations_from_nearest_parent graph_info
     in
-    print_statistics (accumulate_measurements ~source_locations !performance_entries);
-    performance_entries := []
+    print_statistics
+      ~duration
+      (accumulate_measurements ~source_locations !recorded_measurements);
+    recorded_measurements := []
+;;
+
+let profile' ~time_source ~get_inject ~interaction ~component =
+  let graph_info = ref Graph_info.empty in
+  let recorded_measurements = ref [] in
+  let store_entry entry = recorded_measurements := entry :: !recorded_measurements in
+  let timer_since_last_snapshot = ref None in
+  let handle_profile name =
+    match !timer_since_last_snapshot with
+    | None ->
+      raise_s
+        [%message
+          "Bonsai_bench.profile BUG! No interactions should have been run prior to \
+           startup."
+            ([%here] : Source_code_position.t)]
+    | Some timer ->
+      let duration = stop_timer timer in
+      take_profile_snapshot ~duration ~name !graph_info recorded_measurements;
+      timer_since_last_snapshot := Some (Javascript_profiling.Timer.start ())
+  in
+  let runner =
+    Runner.initialize
+      ~filter_profiles:false
+      ~driver_instrumentation:
+        { instrument_for_computation_watcher =
+            Ui_incr.return Bonsai.Private.Instrumentation.Watching.Not_watching
+        ; instrument_for_profiling =
+            Ui_incr.return Bonsai.Private.Instrumentation.Profiling.Profiling
+        ; computation_watcher_queue =
+            Queue.create ( (* We don't use the computation watcher. *) )
+        ; set_latest_graph_info = (fun gi -> graph_info := gi)
+        ; start_timer = (fun evt -> evt, Javascript_profiling.Timer.start ())
+        ; stop_timer =
+            (fun (evt, timer) ->
+              let duration = stop_timer timer in
+              let measurement_kind =
+                match evt with
+                | Profiling_entry s -> Measurement.Kind.Incremental_recompute s
+                | Graph_application -> Graph_application
+                | Preprocess -> Preprocess
+                | Gather -> Gather
+                | Run_eval_fun -> Run_eval_fun
+                | First_stabilization -> First_stabilization
+                | Stabilize_for_clock -> Stabilize_for_clock
+                | Apply_actions -> Apply_actions
+                | Stabilize_for_action -> Stabilize_for_action
+                | Stabilize_after_all_apply_actions -> Stabilize_after_all_apply_actions
+              in
+              Measurement.create measurement_kind ~duration |> store_entry)
+        }
+      ~wrap_driver_creation:
+        { f =
+            (fun create_driver ->
+              let timer = Javascript_profiling.Timer.start () in
+              let driver = create_driver () in
+              let duration = stop_timer timer in
+              take_profile_snapshot
+                ~duration
+                ~name:"startup"
+                !graph_info
+                recorded_measurements;
+              driver)
+        }
+      ~time_source
+      ~component
+      ~get_inject
+      ~interaction
+  in
+  if not (List.is_empty !recorded_measurements)
+  then
+    raise_s
+      [%message
+        "Bonsai_bench.profile BUG: there should be no profiling entries between \
+         profiling creation and running interactions"
+          ([%here] : Source_code_position.t)];
+  timer_since_last_snapshot := Some (Javascript_profiling.Timer.start ());
+  Runner.run_interactions runner ~handle_profile;
+  Runner.invalidate_observers runner
 ;;
 
 let profile = function
-  | Config.Startup _ -> print_endline "Profiling startup benchmarks is not supported."
+  | Config.Startup { time_source; component; name } ->
+    print_endline [%string "Running Bonsai_bench startup profile of %{name}"];
+    profile'
+      ~time_source
+      ~get_inject:Config.startup_get_inject
+      ~interaction:(Interaction.many [])
+      ~component
   | Interactions { time_source; component; get_inject; interaction; name } ->
     print_endline [%string "Running Bonsai_bench profile of %{name}"];
-    let graph_info = ref Graph_info.empty in
-    let performance_entries = ref [] in
-    let store_entry entry = performance_entries := entry :: !performance_entries in
-    let snapshot_timer = ref None in
-    let handle_profile name =
-      Option.iter !snapshot_timer ~f:(fun timer ->
-        Measurement.create Snapshot timer |> store_entry);
-      take_profile_snapshot ~name !graph_info performance_entries;
-      snapshot_timer := Some (Javascript_profiling.Timer.start ())
-    in
-    let runner =
-      Runner.initialize
-        ~filter_profiles:false
-        ~driver_instrumentation:
-          { instrument_for_computation_watcher =
-              Ui_incr.return Bonsai.Private.Instrumentation.Watching.Not_watching
-          ; instrument_for_profiling =
-              Ui_incr.return Bonsai.Private.Instrumentation.Profiling.Profiling
-          ; computation_watcher_queue =
-              Queue.create ( (* We don't use the computation watcher. *) )
-          ; set_latest_graph_info = (fun gi -> graph_info := gi)
-          ; start_timer = (fun evt -> evt, Javascript_profiling.Timer.start ())
-          ; stop_timer =
-              (fun (evt, timer) ->
-                match evt with
-                | Profiling_entry s -> Measurement.create (Named s) timer |> store_entry
-                | _ -> (* We only care about profiling measurements. *) ())
-          }
-        ~wrap_driver_creation:
-          { f =
-              (fun create_driver ->
-                let timer = Javascript_profiling.Timer.start () in
-                let driver = create_driver () in
-                Measurement.create Startup timer |> store_entry;
-                driver)
-          }
-        ~time_source
-        ~component
-        ~get_inject
-        ~interaction
-    in
-    take_profile_snapshot ~name:"startup" !graph_info performance_entries;
-    snapshot_timer := Some (Javascript_profiling.Timer.start ());
-    Runner.run_interactions runner ~handle_profile;
-    Runner.invalidate_observers runner
+    profile'
+      ~time_source
+      ~get_inject
+      ~interaction:
+        (Interaction.many
+           [ interaction; Interaction.recompute; Interaction.profile ~name:"end of run" ])
+      ~component
 ;;

@@ -1,6 +1,6 @@
 (executables
  (modes byte exe)
- (names main)
+ (names main startup_constant_folding)
  (libraries bonsai bonsai_bench bonsai_test.shared_for_testing_bonsai core
    core_bench.js incr_map incr_map.erase_key bonsai_concrete.ui_incr)
  (preprocess
