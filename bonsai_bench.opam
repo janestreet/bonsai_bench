@@ -22,7 +22,6 @@ depends: [
   "ppx_pattern_bind"
   "textutils"
   "dune"             {>= "3.17.0"}
-  "js_of_ocaml"      {= "6.0.1+jst"}
   "js_of_ocaml-ppx"  {= "6.0.1+jst"}
   "uri"              {>= "3.0.0"}
 ]
