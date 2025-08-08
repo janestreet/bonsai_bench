@@ -13,6 +13,7 @@ depends: [
   "ocaml" {>= "5.1.0"}
   "bonsai"
   "bonsai_concrete"
+  "command_nodejs"
   "core"
   "core_bench"
   "expectable"
@@ -22,7 +23,6 @@ depends: [
   "ppx_pattern_bind"
   "textutils"
   "dune"             {>= "3.17.0"}
-  "js_of_ocaml"      {>= "6.0.0"}
   "js_of_ocaml-ppx"  {>= "6.0.0"}
   "uri"              {>= "3.0.0"}
 ]

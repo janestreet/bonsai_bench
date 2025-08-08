@@ -2,8 +2,8 @@
  (name bonsai_bench)
  (public_name bonsai_bench)
  (libraries textutils.ascii_table_kernel bonsai bonsai_bench_protocol
-   bonsai.bench_scenario bonsai.driver bonsai.proc core core_bench.internals
-   core_bench.js expectable incr_dom.javascript_profiling js_of_ocaml
-   bonsai_concrete.ui_incr)
+   bonsai.bench_scenario bonsai.driver bonsai.proc command_nodejs core
+   core_bench.internals core_bench.js expectable
+   incr_dom.javascript_profiling bonsai_concrete.ui_incr)
  (preprocess
   (pps ppx_jane js_of_ocaml-ppx ppx_pattern_bind)))
