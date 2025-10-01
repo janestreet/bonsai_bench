@@ -37,8 +37,3 @@ module Machine_output : sig
   (* Only the stabilized type exposes [of_sexp]. *)
   type t = V1 of V1.t [@@deriving sexp]
 end
-
-module Private : sig
-  val machine_output_mode_envvar : string
-  val machine_output_tempdir_envvar : string
-end

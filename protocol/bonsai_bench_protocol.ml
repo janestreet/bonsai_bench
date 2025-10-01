@@ -33,8 +33,3 @@ module Machine_output = struct
 
   type t = V1 of V1.t [@@deriving sexp]
 end
-
-module Private = struct
-  let machine_output_mode_envvar = "BONSAI_BENCH_MACHINE_OUTPUT_MODE"
-  let machine_output_tempdir_envvar = "BONSAI_BENCH_MACHINE_OUTPUT_TEMPDIR"
-end

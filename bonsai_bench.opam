@@ -13,6 +13,7 @@ depends: [
   "ocaml" {>= "5.1.0"}
   "bonsai"
   "bonsai_concrete"
+  "command_nodejs"
   "core"
   "core_bench"
   "expectable"
