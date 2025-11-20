@@ -55,8 +55,8 @@ module Basic_benchmarking = struct
     let decr = Interaction.inject Action.Decr
   end
 
-  (* The state does not get reset by default between benchmark runs. We choose
-   an interaction which is idempotent so each test run will be identical. *)
+  (* The state does not get reset by default between benchmark runs. We choose an
+     interaction which is idempotent so each test run will be identical. *)
   let state_machine_idempotent =
     [ State_machine.incr; State_machine.decr; State_machine.incr; State_machine.decr ]
     |> Interaction.many_with_recomputes
@@ -66,11 +66,11 @@ module Basic_benchmarking = struct
          ~get_inject:(fun (_, inject) -> inject)
   ;;
 
-  (* This state machine benchmark does not have an idempotent interaction. As a result, this
-   test will cause the model to grow by 2 every time the test is run during benchmarking.
-   Since (number of test runs * 2) won't exceed the range of int and the performance of
-   incrementing/decrementing by 1 is ~identical between int values, this won't cause
-   skewed benchmark results. *)
+  (* This state machine benchmark does not have an idempotent interaction. As a result,
+     this test will cause the model to grow by 2 every time the test is run during
+     benchmarking. Since (number of test runs * 2) won't exceed the range of int and the
+     performance of incrementing/decrementing by 1 is ~identical between int values, this
+     won't cause skewed benchmark results. *)
   let state_machine_without_reset =
     [ State_machine.incr; State_machine.decr; State_machine.incr; State_machine.incr ]
     |> Interaction.many_with_recomputes
@@ -81,10 +81,10 @@ module Basic_benchmarking = struct
   ;;
 
   (* If it was important that the state machine restarted from the same model every time,
-   then we could use [Test.create_with_resetter] to explicitly reset the model. This
-   comes with an overhead cost, though, as we must reset the model and perform a
-   stabilization. Note that the interaction performed in [state_machine_without_reset]
-   and [state_machine_with_reset] are identical. *)
+     then we could use [Test.create_with_resetter] to explicitly reset the model. This
+     comes with an overhead cost, though, as we must reset the model and perform a
+     stabilization. Note that the interaction performed in [state_machine_without_reset]
+     and [state_machine_with_reset] are identical. *)
   let state_machine_with_reset =
     [ State_machine.incr; State_machine.decr; State_machine.incr; State_machine.incr ]
     |> Interaction.many_with_recomputes
@@ -96,7 +96,7 @@ module Basic_benchmarking = struct
   ;;
 
   (* We can also manually reset the component's model with [Interaction.reset_model]. The
-   test above with [Test.create_with_resetter] is equivalent to this one. *)
+     test above with [Test.create_with_resetter] is equivalent to this one. *)
   let state_machine_with_manual_reset =
     [ State_machine.incr
     ; State_machine.decr
@@ -120,7 +120,7 @@ module Basic_benchmarking = struct
   end
 
   (* This benchmark calls stabilize in between setting each of the components in the
-   [My_triple] component. *)
+     [My_triple] component. *)
   let piecewise_triple_stabilize_between_each =
     let first = Input.create 0 in
     let second = Input.create "" in
@@ -145,9 +145,9 @@ module Basic_benchmarking = struct
   ;;
 
   (* If we wanted to ensure stabilization only happened after all of the inputs were set,
-   we could do the following. Since [many_with_recomputes] just intersperses
-   [stabilize]s in the list of interactions, stabilization is only inserted between the
-   two [many] groups below. *)
+     we could do the following. Since [many_with_recomputes] just intersperses
+     [stabilize]s in the list of interactions, stabilization is only inserted between the
+     two [many] groups below. *)
   let piecewise_triple_stabilize_after_all =
     let first = Input.create 0 in
     let second = Input.create "" in
@@ -244,8 +244,8 @@ end
 
 module Benchmarking_computation_with_bug = struct
   (* Sometimes, you may notice that a benchmark is suspiciously slow. In that case, it may
-   be helpful to [profile] the computation to see what's taking so long. For example,
-   consider the following: *)
+     be helpful to [profile] the computation to see what's taking so long. For example,
+     consider the following: *)
 
   type r =
     { a : int
@@ -260,14 +260,14 @@ module Benchmarking_computation_with_bug = struct
 
   let component_that_does_work_too_often =
     let component (local_ graph) =
-      let now = Bonsai.Clock.now graph in
+      let now = Bonsai.Clock.Expert.now graph in
       let r =
         let%arr now in
         { a = 1000000; b = now }
       in
-      (* BUG: The below [Bonsai.map] will get fired every time any field in the record changes,
-       i.e, whenever [Bonsai.Clock.now] updates. The body of this is expensive and depends
-       only on [a]. *)
+      (* BUG: The below [Bonsai.map] will get fired every time any field in the record
+         changes, i.e, whenever [Bonsai.Clock.Expert.now] updates. The body of this is
+         expensive and depends only on [a]. *)
       Bonsai.map r ~f:(fun { a; _ } -> do_some_work a)
     in
     Interaction.advance_clock_by (Time_ns.Span.of_ms 1.)
@@ -279,13 +279,13 @@ module Benchmarking_computation_with_bug = struct
 
   let component_that_does_work_the_right_amount =
     let component (local_ graph) =
-      let now = Bonsai.Clock.now graph in
+      let now = Bonsai.Clock.Expert.now graph in
       let r =
         let%arr now in
         { a = 1000000; b = now }
       in
       (* This [let%sub] ensures that the below [let%arr] only depends on [a], and hence
-       doesn't run when [Bonsai.Clock.now] updates. *)
+         doesn't run when [Bonsai.Clock.Expert.now] updates. *)
       let%sub { a; _ } = r in
       let%arr a in
       do_some_work a

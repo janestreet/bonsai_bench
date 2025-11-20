@@ -210,9 +210,9 @@ let run_command ~here ~list_benchmarks ~count_benchmarks ~run_benchmarks =
             "list-only"
             no_arg
             ~doc:" List benchmarks & profiles and exit without running them."
-          (* [count_benchmarks_only] doesn't consider the number of profiles, because
-             they aren't affected by the quota, and we want to use the count to suggest
-             quotas / timeouts based on each other. *)
+          (* [count_benchmarks_only] doesn't consider the number of profiles, because they
+             aren't affected by the quota, and we want to use the count to suggest quotas
+             / timeouts based on each other. *)
         and count_benchmarks_only =
           flag
             "count-benchmarks-only"
