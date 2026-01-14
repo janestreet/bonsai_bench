@@ -56,7 +56,8 @@ module Measurement = struct
     include T
     include Comparable.Make_plain (T)
 
-    (* We don't record while printing results, so allocating strings in here should be fine.*)
+    (* We don't record while printing results, so allocating strings in here should be
+       fine. *)
     let to_string = function
       | Incremental_recompute label -> label
       | Graph_application -> "[startup] Graph Application"
@@ -230,7 +231,7 @@ let accumulate_measurements ~source_locations measurements =
              with_ids, Map.update without_ids measurement.kind ~f:accumulate_measurements
            | Some id -> Map.update with_ids id ~f:accumulate_measurements, without_ids)
   in
-  (* Assign measurements without IDs (e.g. startup) a new ID.*)
+  (* Assign measurements without IDs (e.g. startup) a new ID. *)
   Map.fold without_ids ~init:with_ids ~f:(fun ~key:_ ~data:measurement acc ->
     let id =
       match Map.max_elt acc with

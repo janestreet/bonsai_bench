@@ -210,9 +210,9 @@ let run_command ~here ~list_benchmarks ~count_benchmarks ~run_benchmarks =
             "list-only"
             no_arg
             ~doc:" List benchmarks & profiles and exit without running them."
-          (* [count_benchmarks_only] doesn't consider the number of profiles, because
-             they aren't affected by the quota, and we want to use the count to suggest
-             quotas / timeouts based on each other. *)
+          (* [count_benchmarks_only] doesn't consider the number of profiles, because they
+             aren't affected by the quota, and we want to use the count to suggest quotas
+             / timeouts based on each other. *)
         and count_benchmarks_only =
           flag
             "count-benchmarks-only"
@@ -245,11 +245,6 @@ let run_command ~here ~list_benchmarks ~count_benchmarks ~run_benchmarks =
           else (
             match what_to_do with
             | `Run (_save_to_file, run_config) ->
-              let run_config =
-                { (run_config : Core_bench_internals.Run_config.t) with
-                  quota = Span (Time_float.Span.of_sec 1.0)
-                }
-              in
               (match machine_output_file with
                | None ->
                  run_benchmarks
@@ -267,7 +262,7 @@ let run_command ~here ~list_benchmarks ~count_benchmarks ~run_benchmarks =
                           (machine_output_file : string)
                           (exn : Exn.t)]);
                  let measurements = ref [] in
-                 let save_measurement ~comparison_config_name measurement =
+                 let save_measurement ~comparison_config_name ~set_name measurement =
                    measurements
                    := { Bonsai_bench_protocol.Machine_output.V1.Measurement.dimensions =
                           { benchmark_name =
@@ -280,7 +275,10 @@ let run_command ~here ~list_benchmarks ~count_benchmarks ~run_benchmarks =
                                | Other other ->
                                  (* Js_of_ocaml and Wasm_of_ocaml fall into this group. *)
                                  other)
-                          ; tags = String.Map.empty
+                          ; tags =
+                              (match set_name with
+                               | None -> String.Map.empty
+                               | Some set_name -> String.Map.singleton "set" set_name)
                           }
                       ; samples =
                           Core_bench_internals.Measurement.samples measurement
@@ -320,7 +318,7 @@ let run_via_command ?(here = Stdlib.Lexing.dummy_pos) benchmarks =
       ~display_config
       ?save_measurement:
         (let%map.Option save_measurement in
-         save_measurement ~comparison_config_name:None)
+         save_measurement ~comparison_config_name:None ~set_name:None)
       benchmarks
   in
   run_command
@@ -381,11 +379,18 @@ let run_sets_via_command ?(here = Stdlib.Lexing.dummy_pos) sets =
           ~display_config
           ?save_measurement:
             (let%map.Option save_measurement in
-             save_measurement ~comparison_config_name:None)
+             save_measurement ~comparison_config_name:None ~set_name:(Some name))
           benchmarks
       | Profile configs -> For_running_manually.profile configs
       | Comparison comparison ->
-        Comparison.run ~run_config ~analysis_configs comparison ~save_measurement)
+        Comparison.run
+          ~run_config
+          ~analysis_configs
+          comparison
+          ~save_measurement:
+            (let%map.Option save_measurement in
+             fun ~comparison_config_name measurement ->
+               save_measurement ~comparison_config_name ~set_name:(Some name) measurement))
   in
   run_command ~here ~list_benchmarks ~count_benchmarks ~run_benchmarks
 ;;

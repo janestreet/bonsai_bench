@@ -14,10 +14,9 @@ type t =
 type wrap_create = { f : 'a. (unit -> 'a) -> 'a } [@@unboxed]
 
 (* We perform two optimizations in this step: flattening the interactions and deduping
-   stabilizations. Flattening the structure ensures that there's no additional
-   overhead to nesting lots of [Many]s when creating benchmarks. Consecutive
-   [Recompute]s don't add anything to benchmarks and would add a function call of
-   overhead. *)
+   stabilizations. Flattening the structure ensures that there's no additional overhead to
+   nesting lots of [Many]s when creating benchmarks. Consecutive [Recompute]s don't add
+   anything to benchmarks and would add a function call of overhead. *)
 let initialize
   ~filter_profiles
   ~driver_instrumentation
@@ -37,8 +36,8 @@ let initialize
       Bonsai_driver.create ~instrumentation:driver_instrumentation ~time_source component)
   in
   let inject_action action =
-    (* Calling Driver.result every time that inject_action is called
-       is important because the value can change during stabilization *)
+    (* Calling Driver.result every time that inject_action is called is important because
+       the value can change during stabilization *)
     let result = Bonsai_driver.result driver in
     (get_inject result) action
   in
