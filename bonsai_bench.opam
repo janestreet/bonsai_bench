@@ -27,7 +27,7 @@ depends: [
   "js_of_ocaml-ppx"  {>= "6.0.0"}
   "uri"              {>= "3.0.0"}
 ]
-available: arch != "arm32" & arch != "x86_32"
+available: arch != "x86_32"
 synopsis: "A library for benchmarking bonsai web applications"
 description: "
 Bonsai is a library for building reusable UI components inside an
