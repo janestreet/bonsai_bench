@@ -9,7 +9,7 @@ module Basic_benchmarking = struct
     Bonsai_bench.create
       ~name:"Bonsai.const"
       ~component:(fun (local_ _graph) -> Bonsai.return 4)
-      ~get_inject:(fun _ -> Nothing.unreachable_code)
+      ~get_inject:(fun _ action -> Nothing.unreachable_code action)
       (Interaction.many [])
   ;;
 
@@ -141,7 +141,7 @@ module Basic_benchmarking = struct
               (Input.value first)
               (Input.value second)
               (Input.value third))
-         ~get_inject:(fun _ -> Nothing.unreachable_code)
+         ~get_inject:(fun _ action -> Nothing.unreachable_code action)
   ;;
 
   (* If we wanted to ensure stabilization only happened after all of the inputs were set,
@@ -164,7 +164,7 @@ module Basic_benchmarking = struct
               (Input.value first)
               (Input.value second)
               (Input.value third))
-         ~get_inject:(fun _ -> Nothing.unreachable_code)
+         ~get_inject:(fun _ action -> Nothing.unreachable_code action)
   ;;
 
   module Do_work_every_second = struct
@@ -188,7 +188,7 @@ module Basic_benchmarking = struct
     Bonsai_bench.create
       ~name:"Component that does work every second: advance clock by zero each run"
       ~component:Do_work_every_second.component
-      ~get_inject:(fun _ -> Nothing.unreachable_code)
+      ~get_inject:(fun _ action -> Nothing.unreachable_code action)
       Do_work_every_second.advance_by_zero
   ;;
 
@@ -196,7 +196,7 @@ module Basic_benchmarking = struct
     Bonsai_bench.create
       ~name:"Component that does work every second: advance clock by a second each run"
       ~component:Do_work_every_second.component
-      ~get_inject:(fun _ -> Nothing.unreachable_code)
+      ~get_inject:(fun _ action -> Nothing.unreachable_code action)
       Do_work_every_second.advance_by_second
   ;;
 
@@ -274,7 +274,7 @@ module Benchmarking_computation_with_bug = struct
     |> Bonsai_bench.create
          ~name:"Component that fires too often"
          ~component
-         ~get_inject:(fun _ -> Nothing.unreachable_code)
+         ~get_inject:(fun _ action -> Nothing.unreachable_code action)
   ;;
 
   let component_that_does_work_the_right_amount =
@@ -294,7 +294,7 @@ module Benchmarking_computation_with_bug = struct
     |> Bonsai_bench.create
          ~name:"Component that fires the right amount"
          ~component
-         ~get_inject:(fun _ -> Nothing.unreachable_code)
+         ~get_inject:(fun _ action -> Nothing.unreachable_code action)
   ;;
 
   let benchmarks =
